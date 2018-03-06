@@ -5,6 +5,7 @@ module Lib where
 import Prelude hiding (lex)
 import Control.Monad.State
 import Control.Monad.Trans.Maybe
+import Text.Read (readMaybe)
 
 data Exp =
   Var String 
@@ -16,6 +17,7 @@ data Exp =
   | Lam [Exp] Exp
   | Beg [Exp]
   | Proc [Exp]
+  deriving (Show,Eq)
 
 type LispM = MaybeT (State [String])
 isEnd :: LispM Bool
@@ -31,6 +33,10 @@ getOne = do
   s <- peekOne
   dropOne
   return s
+addOne :: String -> LispM ()
+addOne s = do
+  ss <- get
+  put (s:ss)
 matchOne :: String -> LispM ()
 matchOne s = do
   h <- getOne
@@ -45,35 +51,52 @@ lexer ('(':ss) = "(" : lexer ss
 lexer (')':ss) = ")" : lexer ss
 lexer (c:ss) = let (r:rs) = lexer ss in if "(" == r || ")" == r then [c]:r:rs else (c:r):rs
 
+runParser :: String -> Maybe Exp
+runParser s = evalState (runMaybeT parseExp) (lexer s)
+
 parseExp :: LispM Exp
 parseExp = do
   h <- getOne
   case h of
     "(" -> do
-      e <- parseExp
+      e <- parseExp'
       matchOne ")"
       return e
-    "if" -> do
-      es <- parseExpList
-      return $ If es
-    "set!" -> do
-      v <- parseExp
-      e <- parseExp
-      return $ Set v e
-    "define" -> do
-      v <- parseExp
-      e <- parseExp
-      return $ Def v e
-    "lambda" -> do
-      matchOne "("
-      vs <- parseExpList
-      matchOne ")"
-      e <- parseExp
-      return $ Lam vs e
-    "begin" -> do
-      es <- parseExpList
-      return $ Beg es
+    _ -> if isVar h then return $ Var h else return $ Num (read h :: Int)
+  where
+    parseExp' = do
+      i <- getOne
+      case i of
+        "if" -> do
+          es <- parseExpList
+          return $ If es
+        "set!" -> do
+          v <- parseExp
+          e <- parseExp
+          return $ Set v e
+        "define" -> do
+          v <- parseExp
+          e <- parseExp
+          return $ Def v e
+        "lambda" -> do
+          matchOne "("
+          vs <- parseExpList
+          matchOne ")"
+          e <- parseExp
+          return $ Lam vs e
+        "begin" -> do
+          es <- parseExpList
+          return $ Beg es
+        _ -> if isVar i 
+          then do
+            addOne i
+            es <- parseExpList
+            return $ Proc es
+          else
+            fail ""
 
+isVar :: String -> Bool
+isVar s = (readMaybe s :: Maybe Int) == Nothing
 
 parseExpList :: LispM [Exp]
 parseExpList = do

@@ -4,8 +4,9 @@ module Lib where
 
 import Prelude hiding (lex)
 import Control.Monad.State
-import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.Either
 import Text.Read (readMaybe)
+import Data.List.Split
 
 data Exp =
   Var String 
@@ -19,7 +20,7 @@ data Exp =
   | Proc [Exp]
   deriving (Show,Eq)
 
-type LispM = MaybeT (State [String])
+type LispM = EitherT String (State [String])
 isEnd :: LispM Bool
 isEnd = (== []) `liftM` get
 peekOne :: LispM String
@@ -40,19 +41,23 @@ addOne s = do
 matchOne :: String -> LispM ()
 matchOne s = do
   h <- getOne
-  if s == h
-  then fail ""
+  if s /= h
+  then fail $ "cannot match " ++ s ++ " with " ++ h
   else return ()
 
 lexer :: String -> [String]
-lexer [] = []
-lexer (' ':ss) = lexer ss
-lexer ('(':ss) = "(" : lexer ss
-lexer (')':ss) = ")" : lexer ss
-lexer (c:ss) = let (r:rs) = lexer ss in if "(" == r || ")" == r then [c]:r:rs else (c:r):rs
+lexer s = filter (/= "") $ splitOn " " (f s)
+  where 
+    f ('(':ss) = ' ':'(':' ':f ss
+    f (')':ss) = ' ':')':' ':f ss
+    f (c:ss) = c:f ss
+    f [] = []
 
-runParser :: String -> Maybe Exp
-runParser s = evalState (runMaybeT parseExp) (lexer s)
+runParser :: String -> Either String Exp
+runParser s = evalState (runEitherT parseExp) (lexer s)
+
+ex1 = "x"
+ex2 = "(set! x 10)"
 
 parseExp :: LispM Exp
 parseExp = do
@@ -67,6 +72,9 @@ parseExp = do
     parseExp' = do
       i <- getOne
       case i of
+        "quote" -> do
+          e <- parseExp
+          return $ Quote e
         "if" -> do
           es <- parseExpList
           return $ If es
@@ -93,14 +101,14 @@ parseExp = do
             es <- parseExpList
             return $ Proc es
           else
-            fail ""
+            fail "Start of proc is number."
 
 isVar :: String -> Bool
 isVar s = (readMaybe s :: Maybe Int) == Nothing
 
 parseExpList :: LispM [Exp]
 parseExpList = do
-  h <- getOne
+  h <- peekOne
   if h == ")" 
   then return []
   else do

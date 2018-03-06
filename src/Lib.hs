@@ -18,6 +18,7 @@ data Exp =
   | Lam [Exp] Exp
   | Beg [Exp]
   | Proc [Exp]
+  | Null
   deriving (Show,Eq)
 
 type LispM = EitherT String (State [String])
@@ -57,7 +58,51 @@ runParser :: String -> Either String Exp
 runParser s = evalState (runEitherT parseExp) (lexer s)
 
 ex1 = "x"
-ex2 = "(set! x 10)"
+ex2 = "(begin (define x 10) x)"
+
+-- testLisp :: String -> String
+testLisp s = show $ (runParser s) >>= return . evalExp
+
+lookupEnv :: Exp -> State [(Exp,Exp)] Exp
+lookupEnv exp = do
+  env <- get
+  case env of
+    [] -> return exp
+    ((e1,e2):es) -> if e1 == exp 
+      then return e2 
+      else lookupEnv exp
+
+setEnv :: Exp -> Exp -> [(Exp,Exp)] -> [(Exp,Exp)]
+setEnv v e [] = []
+setEnv v e ((vv,ee):r) = if v == vv then ((vv,e):r) else (vv,ee):setEnv v e r
+
+evalExp :: Exp -> Exp
+evalExp e = evalState (evalExp' e) []
+
+evalExp' :: Exp -> State [(Exp,Exp)] Exp
+evalExp' exp = case exp of
+  Var v -> lookupEnv exp
+  Num i -> return $ Num i
+  Quote e -> return $ e
+  If (t:c:a:[]) -> do
+    tt <- evalExp' t
+    if tt == Num 0 then evalExp' a else evalExp' c
+  Set v e -> do
+    env <- get
+    put $ setEnv v e env
+    return Null
+  Def v e -> do
+    env <- get
+    put ((v,e):env)
+    return Null
+  Lam _ _ -> return exp
+  Beg [e] -> evalExp' e
+  Beg (e:es) -> evalExp' e >> evalExp' (Beg es)
+  Proc ((Lam as b): gas) -> do
+    env <- get
+    put (zip as gas ++ env)
+    evalExp' b
+  Null -> return Null
 
 parseExp :: LispM Exp
 parseExp = do

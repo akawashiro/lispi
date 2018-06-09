@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-
 module Lib where
 
 import Prelude hiding (lex)
@@ -60,7 +58,7 @@ runParser s = evalState (runEitherT parseExp) (lexer s)
 ex1 = "x"
 ex2 = "(begin (define x 10) x)"
 
--- testLisp :: String -> String
+testLisp :: String -> String
 testLisp s = show $ (runParser s) >>= return . evalExp
 
 lookupEnv :: Exp -> State [(Exp,Exp)] Exp
